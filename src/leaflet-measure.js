@@ -32,9 +32,10 @@ L.Control.Measure = L.Control.extend({
   options: {
     units: {},
     position: 'topright',
-    primaryLengthUnit: 'feet',
-    secondaryLengthUnit: 'miles',
-    primaryAreaUnit: 'acres',
+    primaryLengthUnits: ['feet'],
+    secondaryLengthUnits: ['miles'],
+    primaryAreaUnits: ['acres'],
+    secondaryAreaUnits: [],
     activeColor: '#ABE67E', // base color for map features while actively measuring
     completedColor: '#C8F2BE', // base color for permenant features generated from completed measure
     captureZIndex: 10000, // z-index of the marker used to capture measure events
@@ -45,6 +46,15 @@ L.Control.Measure = L.Control.extend({
     }
   },
   initialize: function(options) {
+    ['primaryLengthUnit', 'secondaryLengthUnit', 'primaryAreaUnit', 'secondaryAreaUnit'].forEach(
+      function(field) {
+        const newField = field + 's';
+        if (options && options[field] && !options[newField]) {
+          options[newField] = [options[field]];
+          delete options[field];
+        }
+      }
+    );
     L.setOptions(this, options);
     const { activeColor, completedColor } = this.options;
     this._symbols = new Symbology({ activeColor, completedColor });
@@ -236,34 +246,43 @@ L.Control.Measure = L.Control.extend({
     return {
       lengthDisplay: buildDisplay(
         measurement.length,
-        this.options.primaryLengthUnit,
-        this.options.secondaryLengthUnit,
+        this.options.primaryLengthUnits,
+        this.options.secondaryLengthUnits,
         this.options.decPoint,
         this.options.thousandsSep
       ),
       areaDisplay: buildDisplay(
         measurement.area,
-        this.options.primaryAreaUnit,
-        this.options.secondaryAreaUnit,
+        this.options.primaryAreaUnits,
+        this.options.secondaryAreaUnits,
         this.options.decPoint,
         this.options.thousandsSep
       )
     };
 
-    function buildDisplay(val, primaryUnit, secondaryUnit, decPoint, thousandsSep) {
-      if (primaryUnit && unitDefinitions[primaryUnit]) {
-        let display = formatMeasure(val, unitDefinitions[primaryUnit], decPoint, thousandsSep);
-        if (secondaryUnit && unitDefinitions[secondaryUnit]) {
-          const formatted = formatMeasure(
-            val,
-            unitDefinitions[secondaryUnit],
-            decPoint,
-            thousandsSep
-          );
-          display = `${display} (${formatted})`;
-        }
-        return display;
+    function buildDisplay(val, primaryUnits, secondaryUnits, decPoint, thousandsSep) {
+      const displays = [];
+
+      [primaryUnits, secondaryUnits].forEach(function(units) {
+        let display_found = false;
+        units.forEach(function(unitName, unit_idx) {
+          const unit = unitDefinitions[unitName] || null;
+          if (unit && !display_found) {
+            const [formattedNumber, label] = formatMeasure(val, unit, decPoint, thousandsSep);
+            if (+formattedNumber.replace(thousandsSep, '') > 0 || unit_idx === units.length) {
+              displays.push(`${formattedNumber} ${label}`);
+              display_found = true;
+            }
+          }
+        });
+      });
+
+      if (displays.length === 1) {
+        return displays[0];
+      } else if (displays.length === 2) {
+        return `${displays[0]} (${displays[1]})`;
       }
+
       return formatMeasure(val, null, decPoint, thousandsSep);
     }
 
@@ -288,7 +307,7 @@ L.Control.Measure = L.Control.extend({
         thousandsSep || __('thousandsSep')
       );
       const label = unitDisplays[u.display] || u.display;
-      return [formattedNumber, label].join(' ');
+      return [formattedNumber, label];
     }
   },
   // update results area of dom with calced measure from `this._latlngs`
